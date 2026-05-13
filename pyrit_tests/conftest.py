@@ -34,10 +34,6 @@ def auth_token():
 
 @pytest.fixture(scope="session")
 def pyrit_memory():
-    """
-    Initialize PyRIT memory only — no initializers, no external env vars required.
-    PyRIT 0.13+: import CentralMemory and set InMemoryStorage directly.
-    """
     from pyrit.memory import CentralMemory
     from pyrit.memory.in_memory_storage import InMemoryStorage
     CentralMemory.set_memory_instance(InMemoryStorage())
