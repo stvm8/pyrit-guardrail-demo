@@ -195,10 +195,13 @@ async def chat(
 
     # ── LLM call ──
     if not OPENAI_API_KEY:
-        # Stub response when no API key (for local testing without OpenAI)
         reply = _stub_llm_response(user_input)
     else:
-        reply = await _call_openai(user_input)
+        try:
+            reply = await _call_openai(user_input)
+        except Exception as e:
+            logger.warning(f"LLM call failed, using stub: {e}")
+            reply = _stub_llm_response(user_input)
 
     # ── Output scrubbing ──
     if GUARDRAIL_STRENGTH == "strong":
