@@ -1,0 +1,77 @@
+name: LLM Guardrail Security Pipeline
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      guardrail_mode:
+        description: 'strong or weak'
+        default: 'strong'
+
+jobs:
+  security-test:
+    name: Build, Deploy & PyRIT Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build app image
+        run: docker build -t llm-app:test ./app
+
+      - name: Start app
+        run: |
+          MODE="${{ github.event.inputs.guardrail_mode || 'strong' }}"
+          docker run -d \
+            --name llm-app \
+            -p 8000:8000 \
+            -e GUARDRAIL_STRENGTH=$MODE \
+            -e APP_AUTH_TOKEN=${{ secrets.STAGING_AUTH_TOKEN }} \
+            -e OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }} \
+            llm-app:test
+          echo "Started with GUARDRAIL_STRENGTH=$MODE"
+
+      - name: Wait for health
+        run: |
+          for i in $(seq 1 20); do
+            curl -sf http://localhost:8000/health && exit 0
+            sleep 3
+          done
+          docker logs llm-app && exit 1
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install PyRIT
+        working-directory: pyrit_tests
+        run: pip install -r requirements.txt
+
+      - name: Run PyRIT smoke tests
+        working-directory: pyrit_tests
+        env:
+          APP_ENDPOINT: http://localhost:8000
+          APP_AUTH_TOKEN: ${{ secrets.STAGING_AUTH_TOKEN }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENROUTER_REFERER: https://github.com/${{ github.repository }}
+        run: |
+          mkdir -p ~/.pyrit
+          echo "OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}" > ~/.pyrit/.env
+          pytest -m smoke -v --tb=short --junit-xml=results.xml
+
+      - name: Publish test report
+        uses: dorny/test-reporter@v1
+        if: always()
+        with:
+          name: PyRIT Security Results
+          path: pyrit_tests/results.xml
+          reporter: java-junit
+
+      - name: Stop app
+        if: always()
+        run: docker stop llm-app || true

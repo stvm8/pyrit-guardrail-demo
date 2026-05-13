@@ -1,0 +1,77 @@
+version: '3.9'
+
+# ─────────────────────────────────────────────────────────────────────────────
+# docker-compose.yml — Local development and demo
+#
+# Usage:
+#   Strong guardrail (tests should PASS):
+#     docker-compose up app-strong
+#
+#   Weak guardrail (tests should FAIL — shows CI blocking):
+#     docker-compose up app-weak
+#
+#   Full stack with PyRIT runner:
+#     GUARDRAIL_STRENGTH=strong docker-compose up --abort-on-container-exit
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+
+  # ── Strong guardrail (production-equivalent) ──
+  app-strong:
+    build:
+      context: ./app
+    container_name: llm-app-strong
+    ports:
+      - "8000:8000"
+    environment:
+      - GUARDRAIL_STRENGTH=strong
+      - APP_AUTH_TOKEN=${APP_AUTH_TOKEN:-demo-secret-token-123}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # ── Weak guardrail (simulates a bad deploy) ──
+  app-weak:
+    build:
+      context: ./app
+    container_name: llm-app-weak
+    ports:
+      - "8001:8000"
+    environment:
+      - GUARDRAIL_STRENGTH=weak
+      - APP_AUTH_TOKEN=${APP_AUTH_TOKEN:-demo-secret-token-123}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # ── PyRIT test runner ──
+  pyrit-runner:
+    image: python:3.11-slim
+    container_name: pyrit-runner
+    depends_on:
+      app-strong:
+        condition: service_healthy
+    working_dir: /tests
+    volumes:
+      - ./pyrit_tests:/tests
+      - pyrit-results:/results
+    environment:
+      - APP_ENDPOINT=http://app-strong:8000
+      - APP_AUTH_TOKEN=${APP_AUTH_TOKEN:-demo-secret-token-123}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+    command: >
+      bash -c "
+        pip install -q -r requirements.txt &&
+        mkdir -p ~/.pyrit &&
+        echo 'OPENAI_API_KEY=${OPENAI_API_KEY:-}' > ~/.pyrit/.env &&
+        pytest -m smoke -v --tb=short --junit-xml=/results/results.xml
+      "
+
+volumes:
+  pyrit-results:

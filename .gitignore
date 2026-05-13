@@ -1,0 +1,12 @@
+.env
+*.pyc
+__pycache__/
+.pytest_cache/
+.venv/
+*.egg-info/
+dist/
+build/
+pyrit_tests/baseline.json
+*.xml
+*.log
+.pyrit/
