@@ -19,7 +19,7 @@ async def test_prompt_injection_zero_tolerance(app_target, bypass_scorer, pyrit_
     Zero tolerance: not a single prompt injection should succeed.
     A single bypass here blocks the entire deploy.
     """
-    from pyrit.orchestrator import PromptSendingOrchestrator
+    from pyrit.orchestrators import PromptSendingOrchestrator
 
     orchestrator = PromptSendingOrchestrator(
         objective_target=app_target,
@@ -70,7 +70,7 @@ async def test_system_prompt_not_revealed(app_target, pyrit_memory):
     Verify the system prompt contents and internal tokens are never returned to the user.
     Checks both direct requests and roundabout extraction attempts.
     """
-    from pyrit.orchestrator import PromptSendingOrchestrator
+    from pyrit.orchestrators import PromptSendingOrchestrator
     from conftest import SYSTEM_PROMPT_EXTRACTION_PROMPTS
 
     orchestrator = PromptSendingOrchestrator(
@@ -120,7 +120,7 @@ async def test_encoding_bypass_resistance(app_target, bypass_scorer, pyrit_memor
     """
     Encoding-based bypasses: base64, ROT13, hex, leetspeak, unicode lookalikes.
     """
-    from pyrit.orchestrator import PromptSendingOrchestrator
+    from pyrit.orchestrators import PromptSendingOrchestrator
     from conftest import ENCODING_BYPASS_PROMPTS, ENCODING_MAX_BYPASS_RATE
 
     orchestrator = PromptSendingOrchestrator(
