@@ -13,6 +13,8 @@ on:
 
 permissions:
   contents: read
+  pages: write
+  id-token: write
 
 jobs:
   security-test:
@@ -51,7 +53,7 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install PyRIT
+      - name: Install dependencies
         working-directory: pyrit_tests
         run: pip install -r requirements.txt
 
@@ -66,44 +68,167 @@ jobs:
           mkdir -p ~/.pyrit
           echo "OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}" > ~/.pyrit/.env
           pytest -m smoke -v --tb=short --junit-xml=results.xml || true
-          python3 - << 'EOF'
-          import xml.etree.ElementTree as ET, sys, os
+
+      - name: Generate HTML report
+        if: always()
+        working-directory: pyrit_tests
+        env:
+          GITHUB_RUN_ID: ${{ github.run_id }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_SHA: ${{ github.sha }}
+          GUARDRAIL_MODE: ${{ github.event.inputs.guardrail_mode || 'strong' }}
+        run: |
+          python3 << 'EOF'
+          import xml.etree.ElementTree as ET, os, datetime
+
           path = "results.xml"
           if not os.path.exists(path):
-              print("No results file found")
-              sys.exit(1)
+              print("No results.xml found")
+              exit(1)
+
           tree = ET.parse(path)
           root = tree.getroot()
           suite = root if root.tag == "testsuite" else root.find("testsuite")
+
           tests   = int(suite.get("tests", 0))
           failed  = int(suite.get("failures", 0))
           errors  = int(suite.get("errors", 0))
           skipped = int(suite.get("skipped", 0))
           passed  = tests - failed - errors - skipped
-          print(f"Results: {passed} passed, {failed} failed, {errors} errors, {skipped} skipped")
+          duration = float(suite.get("time", 0))
+          overall  = "PASSED" if (failed + errors) == 0 else "FAILED"
+          mode     = os.getenv("GUARDRAIL_MODE", "unknown")
+          sha      = os.getenv("GITHUB_SHA", "unknown")[:7]
+          repo     = os.getenv("GITHUB_REPOSITORY", "")
+          run_id   = os.getenv("GITHUB_RUN_ID", "")
+          run_url  = f"https://github.com/{repo}/actions/runs/{run_id}"
+          now      = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
+
+          status_color = "#22c55e" if overall == "PASSED" else "#ef4444"
+          status_bg    = "#f0fdf4" if overall == "PASSED" else "#fef2f2"
+
+          rows = ""
           for tc in suite.findall("testcase"):
-              name = tc.get("name")
-              fail = tc.find("failure")
-              err  = tc.find("error")
+              name      = tc.get("name", "")
+              classname = tc.get("classname", "").replace("pyrit_tests.", "")
+              tc_time   = float(tc.get("time", 0))
+              fail      = tc.find("failure")
+              err       = tc.find("error")
+
               if fail is not None:
-                  print(f"  FAIL: {name}\n    {fail.get('message','')[:200]}")
+                  status = "FAIL"
+                  badge  = "#ef4444"
+                  detail = (fail.text or fail.get("message", ""))[:600]
               elif err is not None:
-                  print(f"  ERROR: {name}\n    {err.get('message','')[:200]}")
+                  status = "ERROR"
+                  badge  = "#f97316"
+                  detail = (err.text or err.get("message", ""))[:600]
               else:
-                  print(f"  PASS: {name}")
-          if failed > 0 or errors > 0:
-              print("\nSECURITY GATE FAILED")
-              sys.exit(1)
-          else:
-              print("\nAll security tests passed")
+                  status = "PASS"
+                  badge  = "#22c55e"
+                  detail = ""
+
+              detail_html = f'<pre style="margin:8px 0 0 0;background:#1e1e1e;color:#f8f8f2;padding:10px;border-radius:6px;font-size:12px;overflow-x:auto;white-space:pre-wrap">{detail}</pre>' if detail else ""
+
+              rows += f"""
+              <tr>
+                <td style="padding:12px 16px;border-bottom:1px solid #e5e7eb">
+                  <span style="font-size:11px;color:#6b7280">{classname}</span><br>
+                  <strong>{name}</strong>{detail_html}
+                </td>
+                <td style="padding:12px 16px;border-bottom:1px solid #e5e7eb;text-align:center">
+                  <span style="background:{badge};color:white;padding:3px 10px;border-radius:12px;font-size:12px;font-weight:600">{status}</span>
+                </td>
+                <td style="padding:12px 16px;border-bottom:1px solid #e5e7eb;text-align:right;color:#6b7280;font-size:13px">{tc_time:.2f}s</td>
+              </tr>"""
+
+          html = f"""<!DOCTYPE html>
+          <html lang="en">
+          <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <meta http-equiv="refresh" content="300">
+            <title>PyRIT Security Report — {overall}</title>
+            <style>
+              *{{box-sizing:border-box;margin:0;padding:0}}
+              body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f9fafb;color:#111827}}
+              .header{{background:#0f172a;color:white;padding:32px 40px}}
+              .header h1{{font-size:24px;font-weight:700;margin-bottom:4px}}
+              .header p{{color:#94a3b8;font-size:14px}}
+              .badge{{display:inline-block;background:{status_color};color:white;padding:6px 18px;border-radius:20px;font-weight:700;font-size:14px;margin-top:12px}}
+              .container{{max-width:960px;margin:32px auto;padding:0 24px}}
+              .summary{{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:24px}}
+              .card{{background:white;border-radius:10px;padding:20px 24px;border:1px solid #e5e7eb;text-align:center}}
+              .card .num{{font-size:36px;font-weight:700;margin-bottom:4px}}
+              .card .label{{font-size:13px;color:#6b7280;text-transform:uppercase;letter-spacing:.05em}}
+              .card.pass .num{{color:#22c55e}}
+              .card.fail .num{{color:#ef4444}}
+              .card.skip .num{{color:#f59e0b}}
+              .card.total .num{{color:#3b82f6}}
+              .meta{{background:white;border-radius:10px;border:1px solid #e5e7eb;padding:16px 24px;margin-bottom:24px;font-size:13px;color:#6b7280;display:flex;flex-wrap:wrap;gap:16px}}
+              .meta a{{color:#3b82f6;text-decoration:none}}
+              table{{width:100%;border-collapse:collapse;background:white;border-radius:10px;overflow:hidden;border:1px solid #e5e7eb;margin-bottom:24px}}
+              thead{{background:#f8fafc}}
+              thead th{{padding:12px 16px;text-align:left;font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:#6b7280;font-weight:600}}
+              tbody tr:hover{{background:#f8fafc}}
+              .overall{{background:{status_bg};border:2px solid {status_color};border-radius:10px;padding:20px 24px;margin-bottom:24px;text-align:center}}
+              .overall h2{{color:{status_color};font-size:20px}}
+              .overall p{{color:#6b7280;margin-top:4px;font-size:14px}}
+            </style>
+          </head>
+          <body>
+            <div class="header">
+              <h1>🛡️ PyRIT Guardrail Security Report</h1>
+              <p>Automated adversarial test results — auto-refreshes every 5 minutes</p>
+              <div class="badge">{overall}</div>
+            </div>
+            <div class="container">
+              <div class="overall">
+                <h2>{'✅ All security gates passed — guardrail is production-ready' if overall == 'PASSED' else '🚨 Security gate FAILED — deployment blocked'}</h2>
+                <p>Guardrail mode: <strong>{mode}</strong> &nbsp;|&nbsp; Commit: <strong>{sha}</strong> &nbsp;|&nbsp; {now}</p>
+              </div>
+              <div class="summary">
+                <div class="card total"><div class="num">{tests}</div><div class="label">Total</div></div>
+                <div class="card pass"><div class="num">{passed}</div><div class="label">Passed</div></div>
+                <div class="card fail"><div class="num">{failed+errors}</div><div class="label">Failed</div></div>
+                <div class="card skip"><div class="num">{skipped}</div><div class="label">Skipped</div></div>
+              </div>
+              <div class="meta">
+                <span>📦 <a href="https://github.com/{repo}">{repo}</a></span>
+                <span>🔗 <a href="{run_url}">Actions run #{run_id}</a></span>
+                <span>⏱ {duration:.1f}s total</span>
+                <span>🕐 {now}</span>
+              </div>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Test</th>
+                    <th style="text-align:center">Result</th>
+                    <th style="text-align:right">Duration</th>
+                  </tr>
+                </thead>
+                <tbody>{rows}</tbody>
+              </table>
+            </div>
+          </body>
+          </html>"""
+
+          with open("security-report.html", "w") as f:
+              f.write(html)
+          print(f"Report: {overall} — {passed} passed, {failed+errors} failed")
+          if failed + errors > 0:
+              exit(1)
           EOF
 
-      - name: Upload results
-        uses: actions/upload-artifact@v4
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
         if: always()
         with:
-          name: pyrit-security-results
-          path: pyrit_tests/results.xml
+          path: pyrit_tests
+
+      - name: Deploy to GitHub Pages
+        uses: actions/deploy-pages@v4
+        if: always()
 
       - name: Stop app
         if: always()
