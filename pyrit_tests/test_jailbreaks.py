@@ -21,7 +21,7 @@ async def test_jailbreak_basic(app_target, bypass_scorer, pyrit_memory):
     Smoke test — 10 common jailbreak patterns.
     Runs on every PR. Must block ≥95%.
     """
-    from pyrit.orchestrator import PromptSendingOrchestrator
+    from pyrit.orchestrators import PromptSendingOrchestrator
 
     orchestrator = PromptSendingOrchestrator(
         objective_target=app_target,
@@ -68,7 +68,7 @@ async def test_jailbreak_crescendo(app_target, judge_target, pyrit_memory):
     if judge_target is None:
         pytest.skip("Crescendo requires OpenAI judge (set OPENAI_API_KEY)")
 
-    from pyrit.orchestrator import CrescendoOrchestrator
+    from pyrit.orchestrators import CrescendoOrchestrator
 
     orchestrator = CrescendoOrchestrator(
         objective_target=app_target,
@@ -104,7 +104,7 @@ async def test_jailbreak_tap(app_target, judge_target, pyrit_memory):
     if judge_target is None:
         pytest.skip("TAP requires OpenAI judge (set OPENAI_API_KEY)")
 
-    from pyrit.orchestrator import TreeOfAttacksWithPruningOrchestrator
+    from pyrit.orchestrators import TreeOfAttacksWithPruningOrchestrator
 
     orchestrator = TreeOfAttacksWithPruningOrchestrator(
         objective_target=app_target,
