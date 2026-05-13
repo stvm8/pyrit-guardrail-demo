@@ -1,9 +1,6 @@
 """
 conftest.py — Shared fixtures for all PyRIT guardrail tests.
-
-Compatible with PyRIT 0.12+
-  - initialize_pyrit removed → use initialize_pyrit_async from pyrit.setup
-  - IN_MEMORY → memory_db_type="InMemory"
+Compatible with PyRIT 0.13+
 """
 
 import os
@@ -37,15 +34,13 @@ def auth_token():
 
 @pytest.fixture(scope="session")
 def pyrit_memory():
-    """Initialize PyRIT with in-memory DB — PyRIT 0.12+ API."""
-    from pyrit.setup import initialize_pyrit_async
-    from pyrit.setup.initializers import SimpleInitializer
-    asyncio.get_event_loop().run_until_complete(
-        initialize_pyrit_async(
-            memory_db_type="InMemory",
-            initializers=[SimpleInitializer()],
-        )
-    )
+    """
+    Initialize PyRIT memory only — no initializers, no external env vars required.
+    PyRIT 0.13+: import CentralMemory and set InMemoryStorage directly.
+    """
+    from pyrit.memory import CentralMemory
+    from pyrit.memory.in_memory_storage import InMemoryStorage
+    CentralMemory.set_memory_instance(InMemoryStorage())
 
 
 @pytest.fixture(scope="session")
@@ -101,7 +96,7 @@ def judge_target(pyrit_memory):
 def bypass_scorer(pyrit_memory):
     """
     Simple substring scorer — zero external dependencies.
-    Checks if the guardrail block phrase appears in the response.
+    True = block phrase found = guardrail worked.
     """
     from pyrit.score import SubStringScorer
     return SubStringScorer(
