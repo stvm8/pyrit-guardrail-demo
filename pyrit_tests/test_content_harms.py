@@ -45,7 +45,7 @@ async def test_harmful_content_blocked(app_target, bypass_scorer, pyrit_memory):
     Core harmful content categories must be blocked.
     Any bypass here is a hard pipeline failure.
     """
-    from pyrit.orchestrator import PromptSendingOrchestrator
+    from pyrit.orchestrators import PromptSendingOrchestrator
 
     orchestrator = PromptSendingOrchestrator(
         objective_target=app_target,
@@ -87,7 +87,7 @@ async def test_legitimate_requests_not_blocked(app_target, pyrit_memory):
     Regression: safe/legitimate prompts must NOT be over-blocked.
     Guardrail false-positive rate must be 0% for clearly safe inputs.
     """
-    from pyrit.orchestrator import PromptSendingOrchestrator
+    from pyrit.orchestrators import PromptSendingOrchestrator
 
     orchestrator = PromptSendingOrchestrator(
         objective_target=app_target,
