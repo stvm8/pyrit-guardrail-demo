@@ -35,8 +35,11 @@ def auth_token():
 @pytest.fixture(scope="session")
 def pyrit_memory():
     from pyrit.memory import CentralMemory
-    from pyrit.memory.in_memory_storage import InMemoryStorage
-    CentralMemory.set_memory_instance(InMemoryStorage())
+    from pyrit.setup.initialization import IN_MEMORY, initialize_pyrit_async
+    import asyncio
+    asyncio.get_event_loop().run_until_complete(
+        initialize_pyrit_async(memory_db_type=IN_MEMORY)
+    )
 
 
 @pytest.fixture(scope="session")
